@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Web.Http;
@@ -85,7 +86,7 @@ namespace api.tests
 
                 var descriptor = selector.SelectController(request);
 
-                Assert.AreEqual(descriptor.ControllerType, typeof(Controllers.v1.StudentsController));
+                Assert.AreEqual(typeof(Controllers.v1.StudentsController), descriptor.ControllerType);
             }
 
             [TestMethod]
@@ -108,6 +109,36 @@ namespace api.tests
                 var descriptor = selector.SelectController(request);
 
                 Assert.AreEqual(descriptor.ControllerType, typeof(Controllers.v2.StudentsController));
+            }
+
+            [TestMethod]
+            public void Throws_http_415_for_unknown_version_in_accept_header()
+            {
+                var config = new HttpConfiguration();
+                config.Routes.MapHttpRoute(
+                    "Default",
+                    "api/{controller}/{action}",
+                    new { controller = "Students", action = "Get" }
+                );
+                var request = new HttpRequestMessage(HttpMethod.Get, "http://localhost/api/");
+                var routeData = config.Routes.GetRouteData(request);
+                request.Properties[HttpPropertyKeys.HttpRouteDataKey] = routeData;
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/api.v11+json"));
+
+                var selector = new VersionedControllerSelector(config);
+                var exceptional = false;
+
+                try
+                {
+                    selector.SelectController(request);
+                }
+                catch (HttpResponseException ex)
+                {
+                    exceptional = true;
+                    Assert.AreEqual(HttpStatusCode.UnsupportedMediaType, ex.Response.StatusCode);
+                }
+                
+                Assert.IsTrue(exceptional, "Expected http 415 exception. None caught.");
             }
         }
     }

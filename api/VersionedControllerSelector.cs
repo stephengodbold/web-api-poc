@@ -1,14 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Web.Http;
 using System.Web.Http.Controllers;
 using System.Web.Http.Dispatcher;
-using System.Web.Http.Routing;
-using api.Controllers.v2;
 
 namespace api
 {
@@ -27,13 +25,13 @@ namespace api
                         "v1.StudentsController", new HttpControllerDescriptor(
                             configuration,
                             "Students",
-                            typeof (StudentsController))
+                            typeof (Controllers.v1.StudentsController))
                     },
                     {
                         "v2.StudentsController", new HttpControllerDescriptor(
                             configuration,
                             "Students",
-                            typeof (StudentsController))
+                            typeof (Controllers.v2.StudentsController))
                     },
                     {
                         "default.StudentsController", new HttpControllerDescriptor(
@@ -46,25 +44,35 @@ namespace api
 
         public HttpControllerDescriptor SelectController(HttpRequestMessage request)
         {
-            MediaTypeWithQualityHeaderValue[] versionHeaders = request.Headers.Accept
-                                                                      .Where(
-                                                                          header => header.MediaType.Contains("api.v"))
-                                                                      .ToArray();
-            IHttpRouteData routeData = request.GetRouteData();
+            var versionHeaders = request.Headers.Accept
+                                    .Where(header => header.MediaType.Contains("api.v"))
+                                    .ToArray();
+            var routeData = request.GetRouteData();
             object controllerName;
 
-            string version = versionHeaders.Any()
-                                 ? "v" + versionHeaders.Select(header => header.MediaType.Substring(
-                                     header.MediaType.IndexOf("api.",
-                                                              StringComparison.InvariantCultureIgnoreCase) + 4,
-                                     2)).Max(v => int.Parse(v[v.Length - 1].ToString(CultureInfo.InvariantCulture)))
-                                 : "default";
+            var version = versionHeaders.Any() ? 
+                "v" + versionHeaders.Select(ExtractApiVersion).Max() : 
+                "default";
 
             routeData.Values.TryGetValue("controller", out controllerName);
 
-            string controllerKey = string.Format(ControllerKeyFormat, version, controllerName);
+            var controllerKey = string.Format(ControllerKeyFormat, version, controllerName);
+
+            if (!controllerTypeCache.ContainsKey(controllerKey))
+            {
+                throw new HttpResponseException(HttpStatusCode.UnsupportedMediaType);
+            }
 
             return controllerTypeCache[controllerKey];
+        }
+
+        private int ExtractApiVersion(MediaTypeWithQualityHeaderValue header)
+        {
+            var apiVersionIndex = header.MediaType.IndexOf("api.v", StringComparison.InvariantCultureIgnoreCase) + 5;
+            var formatSpecificationIndex = header.MediaType.IndexOf("+", StringComparison.InvariantCultureIgnoreCase);
+            var versionTextLength = formatSpecificationIndex - apiVersionIndex;
+
+            return int.Parse(header.MediaType.Substring(apiVersionIndex, versionTextLength));
         }
 
         public IDictionary<string, HttpControllerDescriptor> GetControllerMapping()
